@@ -47,7 +47,7 @@ function App() {
                     `${CONSTANTS.blockfrostAPI}accounts/${key}/delegations/?order=desc`,
                       CONSTANTS.config
                   ))
-                  setTimeout(resolve, 108);
+                  setTimeout(resolve, 40);
                 })
               });
             promise.then(() => {
@@ -74,7 +74,7 @@ function App() {
           .then(() => {
             return new Promise(resolve => {
               getTxHash(label);
-              setTimeout(resolve, 18000);
+              setTimeout(resolve, 30000);
             })
           });
       });
@@ -126,7 +126,7 @@ function App() {
                       `${CONSTANTS.blockfrostAPI}txs/${delegator.tx}`,
                       CONSTANTS.config
                     ))}
-                    setTimeout(resolve, 108);
+                    setTimeout(resolve, 50);
                   })
                 })
                 nestedPromise.then(() => {
@@ -137,6 +137,7 @@ function App() {
                     Promise
                       .all(slots)
                       .then(items => {
+                        console.log("items", items);
                         items.forEach(
                           (item, index) => {
                             const { hash, slot } = item.data;
@@ -149,7 +150,7 @@ function App() {
                     }
                 });
               })
-            setTimeout(resolve, 30000);
+            setTimeout(resolve, 60000);
           });
         });
         promise.then(() => {
