@@ -12,17 +12,16 @@ function App() {
   const [allDelegators, setAllDelegators] = useState(null);
   const [extendedDelegatorObject, setExtendedDelegatorObject] = useState(null);
   const [delegatorWithTimestamp, setDelegatorWithTimestamp] = useState(null);
-  const [slots, setSlots] = useState([]);
   const [finalList, setFinalList] = useState(null);
  
   useEffect(() => {
     if (liveDelegation) {
       setCurrentPoolTicker(
-        CONSTANTS.extendedPools.find(
+        CONSTANTS.allPools.find(
           pool => pool.value === liveDelegation.pool_id
         ).label
       )
-      CONSTANTS.extendedPools.forEach(async ({ value, label }) =>
+      CONSTANTS.allPools.forEach(async ({ value, label }) =>
         await getDelegatorsForPool(value, label));
     }
   }, [liveDelegation]);
@@ -31,30 +30,42 @@ function App() {
     if (
       allDelegators &&
       Object.keys(allDelegators).length &&
-      Object.keys(allDelegators).length === 15
+      Object.keys(allDelegators).length === 25
     ) {
       let delegatorWorkingObject = allDelegators;
       const getTxHash = async (ticker) => {
         const delegators = allDelegators[ticker];
         const stakeKeys = await delegators.map(delegator => delegator.address);
         if (stakeKeys) {
-          const txs = stakeKeys.map(async key => await axios.get(
-            `${CONSTANTS.blockfrostAPI}accounts/${key}/delegations/?order=desc`,
-            CONSTANTS.config
-          ));
-          if (txs) {
-            Promise
-              .all(txs)
-              .then(items => {
-                items.forEach(
-                  (item, index) => {
-                  delegatorWorkingObject[ticker][index] = {
-                    ...delegators[index],
-                    tx: item.data[0].tx_hash,
-                  };
-              })
+          const txs = [];
+          let promise = Promise.resolve();
+          stakeKeys.forEach(key => {
+            promise = promise.then(() => {
+              return new Promise(resolve => {
+                txs.push(
+                  axios.get(
+                    `${CONSTANTS.blockfrostAPI}accounts/${key}/delegations/?order=desc`,
+                      CONSTANTS.config
+                  ))
+                  setTimeout(resolve, 108);
+                })
+              });
+            promise.then(() => {
+              if (txs) {
+                Promise
+                  .all(txs)
+                  .then(items => {
+                    items.forEach(
+                      (item, index) => {
+                      delegatorWorkingObject[ticker][index] = {
+                        ...delegators[index],
+                        tx: item.data[0].tx_hash,
+                      };
+                  })
+                })
+              }
             })
-        }
+          })
       }
     } 
       let promise = Promise.resolve();
@@ -63,7 +74,7 @@ function App() {
           .then(() => {
             return new Promise(resolve => {
               getTxHash(label);
-              setTimeout(resolve, 10000);
+              setTimeout(resolve, 18000);
             })
           });
       });
@@ -102,7 +113,6 @@ function App() {
       Object.keys(extendedDelegatorObject).forEach(pool => {
         console.log("pool ticker", pool);
         const newItem = {};
-        let newSlots = [];
         promise = promise.then(() => {
           return new Promise(resolve => {
             let nestedPromise = Promise.resolve();
@@ -116,11 +126,10 @@ function App() {
                       `${CONSTANTS.blockfrostAPI}txs/${delegator.tx}`,
                       CONSTANTS.config
                     ))}
-                    setTimeout(resolve, 50);
+                    setTimeout(resolve, 108);
                   })
                 })
                 nestedPromise.then(() => {
-                  console.log("promise 3", slots)
                   if (slots) {
                     for (let key in delegatorWorkingObject) {
                       newItem[key] = delegatorWorkingObject[key]
@@ -128,7 +137,6 @@ function App() {
                     Promise
                       .all(slots)
                       .then(items => {
-                        console.log("items", items);
                         items.forEach(
                           (item, index) => {
                             const { hash, slot } = item.data;
@@ -136,17 +144,15 @@ function App() {
                               transaction => transaction.tx === hash
                             );
                             Object.assign(delegator, { slot });
-                            newSlots = [...newSlots, slot];
                             newItem[pool][index] = delegator;                          
                       })})
                     }
                 });
               })
-            setTimeout(resolve, 60000);
+            setTimeout(resolve, 30000);
           });
         });
         promise.then(() => {
-          setSlots(newSlots);
           setDelegatorWithTimestamp(newItem)
         });
       })
@@ -155,18 +161,11 @@ function App() {
 
   useEffect(() => {
     if (delegatorWithTimestamp) {
-      console.log("delegatorwithtimestamp", delegatorWithTimestamp);
       const finalObject = {};
       Object.keys(delegatorWithTimestamp).forEach(pool => {
-        const updatedList = delegatorWithTimestamp[pool].map((el, index) => {
-          return {
-            ...el,
-            slot: slots[index],
-          }
-        });
         const intersectionTime = 50000000;
         const filteredDelegations =
-          updatedList.filter(
+          delegatorWithTimestamp[pool].filter(
               el => el.slot < intersectionTime
             );
         const sumLiveStake =
@@ -175,17 +174,17 @@ function App() {
         );
         Object.assign(finalObject, {
           [pool]: {
-            delegators: updatedList,
+            delegators: delegatorWithTimestamp[pool],
             sumLiveStake,
           },
         });
       })
       setFinalList(finalObject);
     }
-  }, [delegatorWithTimestamp, stakeKey, slots]);
+  }, [delegatorWithTimestamp, stakeKey]);
 
   useEffect(() => {
-    if (finalList) console.log("finalList", finalList);
+    if (finalList) console.table("finalList", [finalList, JSON.stringify(finalList)]);
   }, [finalList]);
 
   const getDelegatorsForPool = async (poolId, ticker) => {
