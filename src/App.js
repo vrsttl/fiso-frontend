@@ -13,6 +13,19 @@ function App() {
   const [extendedDelegatorObject, setExtendedDelegatorObject] = useState(null);
   const [delegatorWithTimestamp, setDelegatorWithTimestamp] = useState(null);
   const [finalList, setFinalList] = useState(null);
+  const [poolData, setPoolData] = useState(null);
+
+  useEffect(() => {
+    const getData = async () => {
+      const data = await axios.get('http://localhost:8000/getPools');
+        setPoolData(data.data.result);
+      }
+    getData();
+  }, []);
+
+  useEffect(() => {
+    if (poolData) console.log("poolData", poolData);
+  }, [poolData]);
  
   useEffect(() => {
     if (liveDelegation) {
