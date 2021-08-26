@@ -108,8 +108,8 @@ export const allPools = [...originalPools, ...extendedPools];
 
 export const blockfrostAPI = "https://cardano-mainnet.blockfrost.io/api/v0/";
 
-export const stakeKey = "stake1u9j6xfpn8ywq7stn6ykvv06ajj5t2wewlrx7cvcjfex8agqpu5zyl";
+export const stakeKey = "stake1uxuu6vc0tfx5d7cfhlm4rf37s8mu5l57r62ngpurelfzt3gm3xp8x";
 
 export const config = {
-  headers: { 'project_id': 'VwML3Re9kTzE8KZfzXxvUxfELff8eE3u'},
+  headers: { 'project_id': 'EkAw4OsTQ7QY8I2G4jRXbnBMdiI07Qae'},
 };

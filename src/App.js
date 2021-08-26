@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { cloneDeep, sortBy } from 'lodash';
+import { cloneDeep, sortBy, last } from 'lodash';
 import axios from "axios";
 import * as CONSTANTS from './constants';
 import './App.css';
@@ -39,14 +39,14 @@ function App() {
     ticker
       ? setCurrentPoolTicker(ticker)
       : setErrors({ error: "This stake key doesn't currently delegate to any of the FISO pools."});
-    if (ticker) {
+    /* if (ticker) {
       const delegation = poolData[ticker]
         .delegators
         .find(del => del.tx === liveDelegation.tx_hash);
       if (delegation) setCutoffSlot(delegation.slot);
-    }
-      /* CONSTANTS.allPools.forEach(async ({ value, label }) =>
-        await getDelegatorsForPool(value, label)); */
+    }*/
+      CONSTANTS.allPools.filter(el => el.label === "SOLIA").forEach(async ({ value, label }) =>
+        await getDelegatorsForPool(value, label));
     }
   }, [liveDelegation, poolData]);
 
@@ -63,12 +63,12 @@ function App() {
           const pools = earlyDelegator
             ? CONSTANTS.originalPools
             : CONSTANTS.allPools;
-          console.log("pools", pools);
+          //console.log("pools", pools);
           const filteredPoolsWithTransactions = {};
-          console.log("pooldata", poolData);
+         // console.log("pooldata", poolData);
           pools.forEach(
             ({ label: ticker }) => {
-              console.log("ticker", ticker);
+              //console.log("ticker", ticker);
               filteredPoolsWithTransactions[ticker] = poolData[ticker];
             }
           );
@@ -86,21 +86,22 @@ function App() {
               sumLiveStake,
             };
           }
-          console.log("filteredPoolswithfiltered", filteredPoolsWithFilteredTransactions);
+          //console.log("filteredPoolswithfiltered", filteredPoolsWithFilteredTransactions);
           const objectsFromEntries =
             Object.entries(filteredPoolsWithFilteredTransactions)
               .map(([key, value]) => ({ ...value, key}));
           const sorted = sortBy(objectsFromEntries, ["sumLiveStake"]);
-          console.log("sorted", sorted);
+          //console.log("sorted", sorted);
       }
     }
   }, [cutoffSlot, reservePoolInsertionSlot, currentPoolTicker, poolData]);
 
   useEffect(() => {
     if (
+      liveDelegation &&
       allDelegators &&
       Object.keys(allDelegators).length &&
-      Object.keys(allDelegators).length === 25
+      Object.keys(allDelegators).length === 1
     ) {
       let delegatorWorkingObject = allDelegators;
       const getTxHash = async (ticker) => {
@@ -129,7 +130,7 @@ function App() {
                       (item, index) => {
                       delegatorWorkingObject[ticker][index] = {
                         ...delegators[index],
-                        tx: item.data[0].tx_hash,
+                        tx: item.data,
                       };
                   })
                 })
@@ -144,13 +145,13 @@ function App() {
           .then(() => {
             return new Promise(resolve => {
               getTxHash(label);
-              setTimeout(resolve, 30000);
+              setTimeout(resolve, 10000);
             })
           });
       });
       promise.then(() => setExtendedDelegatorObject(delegatorWorkingObject));
     }
-  }, [allDelegators]);
+  }, [allDelegators, liveDelegation]);
 
   const handleSetKey = key => {
     if (key || key === "") {
@@ -180,7 +181,6 @@ function App() {
       const delegatorWorkingObject = { ...extendedDelegatorObject };
       let promise = Promise.resolve();
       Object.keys(extendedDelegatorObject).forEach(pool => {
-        console.log("pool ticker", pool);
         const newItem = {};
         promise = promise.then(() => {
           return new Promise(resolve => {
@@ -191,10 +191,15 @@ function App() {
                 nestedPromise = nestedPromise.then(() => {
                   return new Promise(resolve => {
                     if (delegator.tx) {
-                      slots.push(axios.get(
-                      `${CONSTANTS.blockfrostAPI}txs/${delegator.tx}`,
-                      CONSTANTS.config
-                    ))}
+                      const slotArray = [];
+                      delegator.tx.forEach(transaction => {
+                        slotArray.push(axios.get(
+                          `${CONSTANTS.blockfrostAPI}txs/${transaction.tx_hash}`,
+                          CONSTANTS.config
+                        ))
+                      })
+                      slots.push(slotArray);
+                    }
                     setTimeout(resolve, 50);
                   })
                 })
@@ -206,20 +211,30 @@ function App() {
                     Promise
                       .all(slots)
                       .then(items => {
-                        console.log("items", items);
-                        items.forEach(
-                          (item, index) => {
-                            const { hash, slot } = item.data;
-                            const delegator = delegatorWorkingObject[pool].find(
-                              transaction => transaction.tx === hash
-                            );
-                            Object.assign(delegator, { slot });
-                            newItem[pool][index] = delegator;                          
-                      })})
+                        Promise.all(items.flat(2)).then(s => {
+                          s.forEach(
+                            (item, index) => {
+                              const delegator = delegatorWorkingObject[pool].find(
+                                delegator => delegator.tx.some(tx => tx.tx_hash === item.data.hash)
+                              );
+                              if (delegator) {
+                                const { tx } = delegator;
+                                const foundTx =
+                                  tx.find(transaction => transaction.tx_hash === item.data.hash);
+                                if (foundTx) {
+                                  foundTx.slot = item.data.slot;
+                                }
+                              }
+                            const foundIndex = newItem[pool].findIndex(el => el.address === delegator.address);
+                            newItem[pool][foundIndex] = delegator;
+                            newItem[pool] = sortBy(newItem[pool], ["slot"]);
+                          })
+                        })
+                      })
                     }
                 });
               })
-            setTimeout(resolve, 60000);
+            setTimeout(resolve, 20000);
           });
         });
         promise.then(() => {
@@ -234,13 +249,22 @@ function App() {
       const finalObject = {};
       Object.keys(delegatorWithTimestamp).forEach(pool => {
         const intersectionTime = 50000000;
-        const filteredDelegations =
-          delegatorWithTimestamp[pool].filter(
-              el => el.slot < intersectionTime
+        const filteredDelegations = [];
+        delegatorWithTimestamp[pool].forEach(delegator => {
+          const transactionToConsider = last(
+            sortBy(
+              delegator.tx.filter(tx =>
+                tx.slot < intersectionTime &&
+                tx.pool_id === CONSTANTS.allPools.find(el => el.label === pool).value)
+              ),
+              ["slot"]
             );
+        filteredDelegations.push(transactionToConsider);
+        })
+        console.log("filteredDel", filteredDelegations);
         const sumLiveStake =
           filteredDelegations.reduce(
-            (acc, delegation) => acc + +delegation.live_stake, 0
+            (acc, delegation) => acc + +delegation.amount, 0
         );
         Object.assign(finalObject, {
           [pool]: {
