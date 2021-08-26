@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { cloneDeep } from 'lodash';
+import { cloneDeep, sortBy } from 'lodash';
 import axios from "axios";
 import * as CONSTANTS from './constants';
 import './App.css';
@@ -14,6 +14,8 @@ function App() {
   const [delegatorWithTimestamp, setDelegatorWithTimestamp] = useState(null);
   const [finalList, setFinalList] = useState(null);
   const [poolData, setPoolData] = useState(null);
+  const [reservePoolInsertionSlot] = useState(37822519);
+  const [cutoffSlot, setCutoffSlot] = useState(99999999999);
 
   useEffect(() => {
     const getData = async () => {
@@ -24,20 +26,75 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (poolData) console.log("poolData", poolData);
+    if (poolData) {
+      console.log("poolData", poolData);
+    }
   }, [poolData]);
  
   useEffect(() => {
-    if (liveDelegation) {
-      setCurrentPoolTicker(
-        CONSTANTS.allPools.find(
-          pool => pool.value === liveDelegation.pool_id
-        ).label
-      )
-      CONSTANTS.allPools.forEach(async ({ value, label }) =>
-        await getDelegatorsForPool(value, label));
+    if (liveDelegation && poolData) {
+      const ticker = CONSTANTS.allPools.find(
+        pool => pool.value === liveDelegation.pool_id
+      ).label
+    ticker
+      ? setCurrentPoolTicker(ticker)
+      : setErrors({ error: "This stake key doesn't currently delegate to any of the FISO pools."});
+    if (ticker) {
+      const delegation = poolData[ticker]
+        .delegators
+        .find(del => del.tx === liveDelegation.tx_hash);
+      if (delegation) setCutoffSlot(delegation.slot);
     }
-  }, [liveDelegation]);
+      /* CONSTANTS.allPools.forEach(async ({ value, label }) =>
+        await getDelegatorsForPool(value, label)); */
+    }
+  }, [liveDelegation, poolData]);
+
+  useEffect(() => {
+    console.log("cutoff", cutoffSlot);
+    if (currentPoolTicker && poolData) {
+      const earlyDelegator = cutoffSlot < reservePoolInsertionSlot;
+      if (CONSTANTS.extendedPools.map(el => el.label).includes(currentPoolTicker) && earlyDelegator) {
+        setErrors({
+          error:
+          `You delegated to ${currentPoolTicker} before it got added to the list of active pools.`
+        });
+      } else {
+          const pools = earlyDelegator
+            ? CONSTANTS.originalPools
+            : CONSTANTS.allPools;
+          console.log("pools", pools);
+          const filteredPoolsWithTransactions = {};
+          console.log("pooldata", poolData);
+          pools.forEach(
+            ({ label: ticker }) => {
+              console.log("ticker", ticker);
+              filteredPoolsWithTransactions[ticker] = poolData[ticker];
+            }
+          );
+          const filteredPoolsWithFilteredTransactions = {};
+          for (const pool in filteredPoolsWithTransactions) {
+            const filteredDelegators =
+              filteredPoolsWithTransactions[pool].delegators
+              .filter(transaction => transaction.slot < cutoffSlot)
+            const sumLiveStake =
+            filteredDelegators.reduce(
+              (acc, delegation) => acc + +delegation.live_stake, 0
+            );
+            filteredPoolsWithFilteredTransactions[pool] = {
+              delegators: filteredDelegators,
+              sumLiveStake,
+            };
+          }
+          console.log("filteredPoolswithfiltered", filteredPoolsWithFilteredTransactions);
+          const objectsFromEntries =
+            Object.entries(filteredPoolsWithFilteredTransactions)
+              .map(([key, value]) => ({ ...value, key}));
+          const sorted = sortBy(objectsFromEntries, ["sumLiveStake"]);
+          console.log("sorted", sorted);
+      }
+    }
+  }, [cutoffSlot, reservePoolInsertionSlot, currentPoolTicker, poolData]);
 
   useEffect(() => {
     if (
@@ -100,7 +157,6 @@ function App() {
       setStakeKey(key);
     };
   };
-
   const getStakingActivity = async () => {
     try {
       const delegations = await axios.get(
@@ -114,7 +170,7 @@ function App() {
     }
     catch (error) {
       setErrors({
-        error: error.response.data.message,
+        error: "This stake key doesn't currently delegate to any of the Minswap FISO pools.",
       });
     };
   };
@@ -238,9 +294,13 @@ function App() {
       <input
         type="text"
         onChange={({ target }) => handleSetKey(target.value)}
+        onPaste={({ target }) => handleSetKey(target.value)}
         value={stakeKey}
       />
-      <button onClick={getStakingActivity} disabled={!stakeKey}>Check your stake pool status</button>
+      <button
+        onClick={getStakingActivity}
+        disabled={!(stakeKey && stakeKey.length === 59 && stakeKey.substring(0, 5) === 'stake')}
+      >Check your stake pool status</button>
       {currentPoolTicker && (
         <>
           <div>Your current pool is:</div>
